@@ -309,33 +309,12 @@ services:
     ports: ["5174:5173"]
 ```
 
-## 9. Production (bible.garden)
+## 9. Production
 
-### Domains
-
-| Domain | Purpose |
-|--------|---------|
-| `bible.garden` | Static site only (no API) |
-| `api.bible.garden` | Bible-API (public read-only) |
-| `bibleapi.space` | Legacy domain (backwards compat) |
-
-### Infrastructure
-
-- **Server**: Hetzner VPS
-- **Containers**: bible-api, bible-web (nginx), cep-mysql
-- **SSL**: Let's Encrypt via nginx
-- **nginx** proxies `api.bible.garden` → bible-api container (port 8000)
-
-### Import
-
-Import is per-translation to avoid OOM on the production server:
-
-```bash
-docker exec bible-api curl -s -H "X-API-Key: ..." \
-  "http://localhost:8000/api/import?translation=syn"
-```
-
-Full import (all translations at once) requires ~147MB RAM and may cause OOM kill.
+- `bible.garden` — static site only (no API)
+- `api.bible.garden` — Bible-API (public read-only)
+- SSL via Let's Encrypt, nginx as reverse proxy
+- Import is done per-translation to keep memory usage low
 
 ## 10. Data Import
 
