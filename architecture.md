@@ -28,6 +28,7 @@ graph TB
 
     DASH -->|JWT| ADM_API
     ADM_API --> ADM_DB
+    ADM_API -.->|read stats| PUB_DB
 
     IOS -->|API Key| PUB_API
     PUB_API --> PUB_DB
@@ -73,13 +74,14 @@ flowchart LR
 
 ### Bible-API
 
-Public read-only API for the iOS app. Minimal, fast, no DB writes (except import).
+Public read-only API for the iOS app. Minimal, fast, no DB writes (except import and request logging).
 
 - **Repo**: [Bible-Garden/Bible-API](https://github.com/Bible-Garden/Bible-API)
 - **Port**: 8084
 - **Auth**: API Key (`X-API-Key`)
-- **DB**: `cep_public` (SELECT only, INSERT during import)
+- **DB**: `cep_public` (SELECT only, INSERT during import and request stats logging)
 - **Production**: `https://api.bible.garden/api`
+- **Request stats**: middleware logs every request to `api_requests` table (fire-and-forget, background thread)
 
 ### Dashboard-API
 
@@ -88,7 +90,7 @@ API for the dashboard and data management. Read + write.
 - **Repo**: [Bible-Garden/Dashboard-API](https://github.com/Bible-Garden/Dashboard-API)
 - **Port**: 8085
 - **Auth**: JWT (admin endpoints), API Key (read endpoints)
-- **DB**: `cep_admin` (full access)
+- **DB**: `cep_admin` (full access), `cep_public` (read-only, for API stats)
 
 ### Dashboard-Web
 
@@ -96,8 +98,9 @@ Vue 3 SPA for reviewing and correcting forced alignment.
 
 - **Repo**: [Bible-Garden/Dashboard-Web](https://github.com/Bible-Garden/Dashboard-Web)
 - **Port**: 5174
-- **Stack**: Vue 3, TypeScript, PrimeVue, TailwindCSS
+- **Stack**: Vue 3, TypeScript, PrimeVue, TailwindCSS, Chart.js
 - **Connects to**: Dashboard-API (`/bible-api` proxy), alignment-api (`/alignment-api` proxy)
+- **Pages**: Voices, Anomalies, Inspect, Alignment Tasks, API Stats
 
 ### php-parser
 
@@ -129,6 +132,8 @@ Bible Garden iOS app — listen to the Bible with pauses and multilingual verse-
 | POST | `/api/cache/clear` | Cache |
 | GET | `/api/import` | Import |
 
+Bible-API also runs `RequestStatsMiddleware` that logs every request (except /docs, /openapi.json, /redoc, /favicon.ico) to `api_requests` table. Dynamic paths are normalized (e.g. `/api/audio/*`, `/api/translations/*/books`).
+
 ### Dashboard-API
 
 | Method | Path | Tag | Auth |
@@ -151,6 +156,8 @@ Bible Garden iOS app — listen to the Bible with pauses and multilingual verse-
 | GET | `/api/check_voice` | Admin | JWT |
 | POST | `/api/cache/clear` | Admin | JWT |
 | GET | `/api/data` | Export | API Key |
+| GET | `/api/stats/summary?days=30` | Statistics | JWT |
+| GET | `/api/stats/recent?limit=50` | Statistics | JWT |
 
 ## 6. Databases
 
@@ -169,6 +176,8 @@ Contains only finalized data for the iOS app.
 | `translation_notes` | Verse footnotes |
 | `voices` | Voices (active=1 only) |
 | `voice_alignments` | Verse timings (with manual_fixes applied) |
+| `api_requests` | Raw API request log (14-day retention) |
+| `api_request_daily_stats` | Aggregated daily API stats (permanent) |
 
 ### cep_admin (admin, full access)
 
@@ -220,6 +229,8 @@ cep/
 │   │   ├── about.py           # About page
 │   │   ├── version_check.py   # Version check
 │   │   ├── import_data.py     # Data import from Dashboard-API
+│   │   ├── middleware.py       # RequestStatsMiddleware (logs requests to DB)
+│   │   ├── aggregate_stats.py # Daily stats aggregation (cron)
 │   │   ├── auth.py            # API Key only
 │   │   ├── models.py          # Pydantic models
 │   │   ├── database.py        # Connection to cep_public
@@ -235,6 +246,7 @@ cep/
 │   │   ├── checks.py          # Integrity checks
 │   │   ├── auth.py            # API Key + JWT
 │   │   ├── data.py            # Data export for Bible-API
+│   │   ├── stats.py           # API usage statistics (reads cep_public)
 │   │   ├── models.py          # Pydantic models
 │   │   ├── database.py        # Connection to cep_admin
 │   │   └── config.py          # Env variables
@@ -316,7 +328,7 @@ services:
 - SSL via Let's Encrypt, nginx as reverse proxy
 - Import is done per-translation to keep memory usage low
 
-## 10. Data Import
+## 12. Data Import
 
 Each service owns its own database. Data is transferred via API, not by direct access to another service's DB. Bible-API fetches data from Dashboard-API.
 
@@ -337,6 +349,38 @@ sequenceDiagram
     CepPublic-->>Public: OK
     Public-->>Operator: report (record counts)
 ```
+
+## 11. API Request Statistics
+
+Tracks Bible-API (public-api) usage to monitor iOS app activity.
+
+### Architecture
+
+```mermaid
+flowchart LR
+    IOS[iOS-App] -->|request| PUB[Bible-API]
+    PUB -->|middleware logs| RAW[(api_requests<br/>cep_public)]
+    CRON[Cron 2:00 AM] -->|aggregate_stats.py| AGG[(api_request_daily_stats<br/>cep_public)]
+    RAW -.->|yesterday's data| AGG
+    CRON -->|purge > 14 days| RAW
+    ADM[Dashboard-API] -->|cross-DB read| RAW
+    ADM -->|cross-DB read| AGG
+    DASH[Dashboard-Web<br/>/stats page] -->|JWT| ADM
+```
+
+### Components
+
+- **Bible-API `middleware.py`**: `RequestStatsMiddleware` — logs every request in a background thread. Normalizes dynamic paths (`/api/audio/*`, `/api/translations/*/books`). Excludes `/docs`, `/openapi.json`, `/redoc`, `/favicon.ico`.
+- **Bible-API `aggregate_stats.py`**: Cron script (`0 2 * * *`) — aggregates yesterday's raw data into `api_request_daily_stats`, purges raw records older than 14 days.
+- **Dashboard-API `stats.py`**: Two JWT-protected endpoints — `GET /api/stats/summary?days=30` (totals, daily breakdown, top endpoints, today's live data) and `GET /api/stats/recent?limit=50` (raw recent requests). Reads from `cep_public` via cross-DB queries.
+- **Dashboard-Web `ApiStats.vue`**: Summary cards, daily requests line chart (Chart.js), top endpoints table, recent requests table with pagination and period selector (7/30/90 days).
+
+### Tables (in cep_public)
+
+| Table | Retention | Purpose |
+|-------|-----------|---------|
+| `api_requests` | 14 days | Raw request log (endpoint, method, status, response_time_ms, client_ip, user_agent) |
+| `api_request_daily_stats` | Permanent | Aggregated per day+endpoint (request_count, unique_ips, avg_response_time_ms, error_count) |
 
 ### Dashboard-API: `GET /api/data[?translation=alias]`
 
