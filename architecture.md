@@ -211,7 +211,7 @@ During import, Bible-API calls `GET /api/data` on Dashboard-API. On the Dashboar
 ## 7. Directory Structure
 
 ```
-/root/cep/
+cep/
 ├── public-api/          # Bible-API (FastAPI) — github.com/Bible-Garden/Bible-API
 │   ├── app/
 │   │   ├── main.py            # Entry point, routers
