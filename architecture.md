@@ -16,7 +16,7 @@ graph TB
     subgraph Admin Contour
         ADM_API[Dashboard-API<br/>FastAPI]
         ADM_DB[(cep_admin<br/>MySQL 8.4)]
-        PARSER[php-parser<br/>scripts + MFA]
+        PARSER[bible-parser<br/>scripts + MFA]
     end
 
     subgraph Public Contour
@@ -42,18 +42,18 @@ All repositories are under the [Bible-Garden](https://github.com/Bible-Garden) o
 
 | Repository | Local directory | Description |
 |------------|----------------|-------------|
-| [Bible-API](https://github.com/Bible-Garden/Bible-API) | `public-api/` | Public read-only API for the iOS app |
-| [Dashboard-API](https://github.com/Bible-Garden/Dashboard-API) | `admin-api/` | Admin API — data management, quality control, export |
-| [Dashboard-Web](https://github.com/Bible-Garden/Dashboard-Web) | `dashboard/` | Vue 3 admin dashboard — alignment review and QC |
+| [Bible-API](https://github.com/Bible-Garden/Bible-API) | `Bible-API/` | Public read-only API for the iOS app |
+| [Dashboard-API](https://github.com/Bible-Garden/Dashboard-API) | `Dashboard-API/` | Admin API — data management, quality control, export |
+| [Dashboard-Web](https://github.com/Bible-Garden/Dashboard-Web) | `Dashboard-Web/` | Vue 3 admin dashboard — alignment review and QC |
 | [iOS-App](https://github.com/Bible-Garden/iOS-App) | — | Bible Garden iOS app |
-| [Architecture](https://github.com/Bible-Garden/Architecture) | `architect/` | This documentation |
+| [Architecture](https://github.com/Bible-Garden/Architecture) | `Architecture/` | This documentation |
 
 ## 3. Data Flow
 
 ```mermaid
 flowchart LR
-    A[Download texts<br/>php-parser] --> B[Forced Alignment<br/>MFA]
-    B --> C[Save to cep_admin<br/>php-parser]
+    A[Download texts<br/>bible-parser] --> B[Forced Alignment<br/>MFA]
+    B --> C[Save to cep_admin<br/>bible-parser]
     C --> D[Quality checks<br/>quality scripts]
     D --> E[Manual fixes<br/>Dashboard-Web]
     E --> F[Import to cep_public<br/>Bible-API]
@@ -62,7 +62,7 @@ flowchart LR
 
 ### What happens at each step
 
-1. **php-parser** downloads Bible texts from open sources
+1. **bible-parser** downloads Bible texts from open sources
 2. **MFA** aligns text with audio (word-level timestamps)
 3. Results are saved to `cep_admin` database (voice_alignments, voice_chapters)
 4. **Python scripts** analyze quality and write anomalies to voice_anomalies
@@ -102,7 +102,7 @@ Vue 3 SPA for reviewing and correcting forced alignment.
 - **Connects to**: Dashboard-API (`/bible-api` proxy), alignment-api (`/alignment-api` proxy)
 - **Pages**: Voices, Anomalies, Inspect, Alignment Tasks, API Stats
 
-### php-parser
+### bible-parser
 
 Data pipeline: text downloading, forced alignment, DB loading. Not a running service — utility scripts.
 
@@ -221,7 +221,7 @@ During import, Bible-API calls `GET /api/data` on Dashboard-API. On the Dashboar
 
 ```
 cep/
-├── public-api/          # Bible-API (FastAPI) — github.com/Bible-Garden/Bible-API
+├── Bible-API/           # Bible-API (FastAPI) — github.com/Bible-Garden/Bible-API
 │   ├── app/
 │   │   ├── main.py            # Entry point, routers
 │   │   ├── excerpt.py         # Content endpoint (simplified, no COALESCE)
@@ -238,7 +238,7 @@ cep/
 │   ├── Dockerfile
 │   └── docker-compose.yml
 │
-├── admin-api/           # Dashboard-API (FastAPI) — github.com/Bible-Garden/Dashboard-API
+├── Dashboard-API/       # Dashboard-API (FastAPI) — github.com/Bible-Garden/Dashboard-API
 │   ├── app/
 │   │   ├── main.py            # Entry point, all admin endpoints
 │   │   ├── excerpt.py         # Content endpoints (with COALESCE)
@@ -254,7 +254,7 @@ cep/
 │   ├── Dockerfile
 │   └── docker-compose.yml
 │
-├── dashboard/           # Dashboard-Web (Vue 3) — github.com/Bible-Garden/Dashboard-Web
+├── Dashboard-Web/       # Dashboard-Web (Vue 3) — github.com/Bible-Garden/Dashboard-Web
 │   ├── src/
 │   │   ├── Components/        # Vue components
 │   │   ├── composables/       # useApi, useAuth, useAlignmentTasks, useAudioPlayback
@@ -266,7 +266,7 @@ cep/
 │   ├── Dockerfile
 │   └── docker-compose.yml
 │
-├── php-parser/          # Data pipeline (not on GitHub)
+├── bible-parser/        # Data pipeline — github.com/MariaPaypoint/bible-parser
 │   ├── alignment/             # Forced alignment (MFA)
 │   ├── parsing/               # Text parsing
 │   ├── quality/               # Anomaly analysis scripts
@@ -277,7 +277,7 @@ cep/
 │   ├── docker-compose.yml     # MySQL 8.4 (port 3308)
 │   └── setup_cep_public.sql   # DDL for cep_public
 │
-└── architect/           # Architecture — github.com/Bible-Garden/Architecture
+└── Architecture/        # Architecture — github.com/Bible-Garden/Architecture
     └── architecture.md
 ```
 
@@ -293,19 +293,21 @@ services:
     container_name: cep-mysql
     ports: ["3308:3306"]
 
-# public-api/docker-compose.yml
+# Bible-API/docker-compose.yml
 services:
-  public-api:
+  bible-api:
+    container_name: bible-api
     build: .
-    ports: ["8084:8000"]
+    ports: ["9084:8000"]
     env_file: .env
     volumes:
       - ${AUDIO_DIR}:/audio
     networks: [mysql_default]
 
-# admin-api/docker-compose.yml
+# Dashboard-API/docker-compose.yml
 services:
-  admin-api:
+  dashboard-api:
+    container_name: dashboard-api
     build: .
     ports: ["8085:8000"]
     env_file: .env
@@ -313,12 +315,12 @@ services:
       - ${AUDIO_DIR}:/audio
     networks: [mysql_default]
 
-# dashboard/docker-compose.yml
+# Dashboard-Web/docker-compose.yml
 services:
-  dashboard:
+  dashboard-web:
     build: .
-    container_name: bible-dashboard
-    ports: ["5174:5173"]
+    container_name: dashboard-web
+    ports: ["9086:5173"]
 ```
 
 ## 9. Production
@@ -352,7 +354,7 @@ sequenceDiagram
 
 ## 11. API Request Statistics
 
-Tracks Bible-API (public-api) usage to monitor iOS app activity.
+Tracks Bible-API usage to monitor iOS app activity.
 
 ### Architecture
 
