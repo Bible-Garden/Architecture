@@ -2,7 +2,8 @@
 
 ## 1. Overview
 
-The system consists of two API services, an admin dashboard, and a data pipeline for data preparation.
+The system consists of two API services, an admin dashboard, a data pipeline for
+data preparation, the Bible Garden app and the Lampada prayer app.
 
 **Principle**: data is prepared in the admin contour, and only verified and finalized data reaches the public contour via export.
 
@@ -11,6 +12,11 @@ graph TB
     subgraph Clients
         DASH[Dashboard-Web<br/>Vue 3 SPA]
         IOS[iOS-App<br/>Bible Garden]
+        LAMPADA[Lampada-Mobile<br/>Expo / React Native]
+    end
+
+    subgraph External AI
+        GEMINI[Google Gemini API]
     end
 
     subgraph Admin Contour
@@ -31,7 +37,9 @@ graph TB
     ADM_API -.->|read stats| PUB_DB
 
     IOS -->|API Key| PUB_API
+    LAMPADA -->|API Key| PUB_API
     PUB_API --> PUB_DB
+    PUB_API -->|consent-gated prayer content| GEMINI
 
     PUB_API -->|import| ADM_API
 ```
@@ -46,6 +54,7 @@ All repositories are under the [Bible-Garden](https://github.com/Bible-Garden) o
 | [Dashboard-API](https://github.com/Bible-Garden/Dashboard-API) | `Dashboard-API/` | Admin API — data management, quality control, export |
 | [Dashboard-Web](https://github.com/Bible-Garden/Dashboard-Web) | `Dashboard-Web/` | Vue 3 admin dashboard — alignment review and QC |
 | [iOS-App](https://github.com/Bible-Garden/iOS-App) | — | Bible Garden iOS app |
+| [Lampada-Mobile](https://github.com/BibleGarden/Lampada-Mobile) | `Lampada-Mobile/` | Prayer app with local journal and optional AI features |
 | [Architecture](https://github.com/Bible-Garden/Architecture) | `Architecture/` | This documentation |
 
 ## 3. Data Flow
@@ -116,6 +125,19 @@ Bible Garden iOS app — listen to the Bible with pauses and multilingual verse-
 - **Repo**: [Bible-Garden/iOS-App](https://github.com/Bible-Garden/iOS-App)
 - **Connects to**: Bible-API (`https://api.bible.garden/api`)
 
+### Lampada-Mobile
+
+Lampada is a separate Expo application for guided prayer. Prayer sessions,
+answers, recordings, transcripts, favourites and settings are stored locally on
+the device. It uses Bible API for generated questions, optional transcription,
+contextual scripture selection, scripture text and narration.
+
+Prayer content is sensitive personal data. Its transfer is governed by the
+[Lampada data processing rules](privacy/lampada-data-processing.md) and
+[ADR-0001](decisions/0001-lampada-ai-data-processing.md). Production AI
+processing requires purpose-specific explicit consent and a paid provider
+contract with optional provider logging and data sharing disabled.
+
 ## 5. Endpoints
 
 ### Bible-API
@@ -129,6 +151,9 @@ Bible Garden iOS app — listen to the Bible with pauses and multilingual verse-
 | GET/HEAD | `/api/audio/{translation}/{voice}/{book}/{chapter}.mp3` | Audio |
 | GET | `/api/about` | About |
 | GET | `/api/version-check` | Version |
+| POST | `/api/ai/question` | AI |
+| POST | `/api/ai/transcribe` | AI |
+| POST | `/api/ai/scripture` | AI |
 | POST | `/api/cache/clear` | Cache |
 | GET | `/api/import` | Import |
 
