@@ -204,6 +204,8 @@ Contains only finalized data for the iOS app.
 | `api_requests` | Raw API request log (14-day retention) |
 | `api_request_daily_stats` | Aggregated daily API stats (permanent) |
 
+Adding a **new language** is not just a `languages` row — `bible_books` carries per-language columns (`short_name_*`, `full_name_*`) and code in Bible-API, bible-parser and the evaluation set enumerates `ru`/`uk`/`en` in ~100 enumerated places across six repositories, including the despair rule of `app/safety.py`. The complete checklist is `Bible-API/architect/adding-a-language.md`.
+
 ### cep_admin (admin, full access)
 
 Contains all data, including working and technical tables.
